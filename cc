@@ -56,19 +56,21 @@ EOF
 # обновление делегируем install.sh из репозитория: он один знает, откуда брать
 # cc и как его безопасно подменить (сюда логику не дублируем)
 cmd_update() {
-  local dir url tmp
+  local dir url tmp status
   dir="$(cd "$(dirname "$0")" && pwd)"
   url="https://raw.githubusercontent.com/$CC_REPO/${CC_INSTALLER_REF:-main}/install.sh"
   tmp="$(mktemp)"
-  trap 'rm -f "$tmp"' EXIT
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" -o "$tmp" || die "не скачался install.sh: $url"
+    curl -fsL "$url" -o "$tmp" || { rm -f "$tmp"; die "не скачался install.sh: $url"; }
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$tmp" "$url" || die "не скачался install.sh: $url"
+    wget -qO "$tmp" "$url" || { rm -f "$tmp"; die "не скачался install.sh: $url"; }
   else
-    die "нужен curl или wget"
+    rm -f "$tmp"; die "нужен curl или wget"
   fi
-  CC_INSTALL_DIR="$dir" CC_SOURCE=remote bash "$tmp"
+  status=0
+  CC_INSTALL_DIR="$dir" CC_SOURCE=remote bash "$tmp" || status=$?
+  rm -f "$tmp"
+  return "$status"
 }
 
 cmd_ls() {

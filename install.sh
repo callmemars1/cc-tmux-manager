@@ -24,7 +24,7 @@ version_of() { sed -n 's/^CC_VERSION="\(.*\)"$/\1/p' "$1" | head -n1; }
 
 fetch() { # fetch <url> <dest>
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$1" -o "$2"
+    curl -fsL "$1" -o "$2"
   elif command -v wget >/dev/null 2>&1; then
     wget -qO "$2" "$1"
   else
