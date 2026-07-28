@@ -1,0 +1,48 @@
+name: release
+
+# Релиз привязан к CC_VERSION в самом cc: как только в main приезжает новое
+# значение, workflow создаёт тег vX.Y.Z и релиз с cc и install.sh.
+# Пуш без бампа версии не делает ничего.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - id: version
+        name: версия и есть ли уже такой релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="$(sed -n 's/^CC_VERSION="\(.*\)"$/\1/p' cc | head -n1)"
+          [ -n "$v" ] || { echo "в cc нет строки CC_VERSION=\"...\""; exit 1; }
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "CC_VERSION=$v — не semver"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$v" >/dev/null \
+            || gh release view "v$v" >/dev/null 2>&1; then
+            echo "v$v уже выпущен — релиз не нужен"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.version.outputs.exists == 'false'
+        name: релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" cc install.sh \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --generate-notes

@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: синтаксис
+        run: bash -n cc install.sh
+
+      - name: shellcheck
+        run: shellcheck cc install.sh
+
+      - name: CC_VERSION — semver
+        run: |
+          v="$(sed -n 's/^CC_VERSION="\(.*\)"$/\1/p' cc | head -n1)"
+          [ -n "$v" ] || { echo "в cc нет строки CC_VERSION=\"...\""; exit 1; }
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "CC_VERSION=$v — не semver"; exit 1; }
+          echo "версия: $v"
+
+      - name: установка из клона
+        run: |
+          CC_INSTALL_DIR="$RUNNER_TEMP/bin" ./install.sh
+          "$RUNNER_TEMP/bin/cc" version
+
+      - name: повторный запуск идемпотентен
+        run: |
+          CC_INSTALL_DIR="$RUNNER_TEMP/bin" ./install.sh | grep -q 'уже актуален'
+
+      - name: симлинк не перезаписывается без CC_FORCE
+        run: |
+          mkdir -p "$RUNNER_TEMP/link"
+          ln -sf "$PWD/cc" "$RUNNER_TEMP/link/cc"
+          if CC_INSTALL_DIR="$RUNNER_TEMP/link" ./install.sh; then
+            echo "установщик перезаписал симлинк без CC_FORCE"; exit 1
+          fi
+          CC_FORCE=1 CC_INSTALL_DIR="$RUNNER_TEMP/link" ./install.sh
+          if [ -L "$RUNNER_TEMP/link/cc" ]; then
+            echo "CC_FORCE=1 не заменил симлинк"; exit 1
+          fi
+          "$RUNNER_TEMP/link/cc" version
