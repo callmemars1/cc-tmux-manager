@@ -1,0 +1,67 @@
+name: release
+
+# Релиз привязан к CC_VERSION в самом cc: как только в main приезжает новое
+# значение, workflow создаёт тег vX.Y.Z и релиз с cc и install.sh.
+# Пуш без бампа версии не делает ничего.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - id: version
+        name: версия и есть ли уже такой релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="$(sed -n 's/^CC_VERSION="\(.*\)"$/\1/p' cc | head -n1)"
+          [ -n "$v" ] || { echo "в cc нет строки CC_VERSION=\"...\""; exit 1; }
+          echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "CC_VERSION=$v — не semver"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$v" >/dev/null \
+            || gh release view "v$v" >/dev/null 2>&1; then
+            echo "v$v уже выпущен — релиз не нужен"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.version.outputs.exists == 'false'
+        name: релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" cc install.sh \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --generate-notes
+
+      # основной пользовательский путь: install.sh качает ассет cc из релиза.
+      # Ассет проверяем отдельным curl — иначе откат install.sh на main скрыл бы,
+      # что релиз выложился без файла.
+      - if: steps.version.outputs.exists == 'false'
+        name: установка из свежего релиза
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          url="https://github.com/$GITHUB_REPOSITORY/releases/latest/download/cc"
+          for _ in 1 2 3 4 5; do
+            curl -fsL "$url" -o "$RUNNER_TEMP/cc.asset" && break
+            sleep 3
+          done
+          grep -qx "CC_VERSION=\"$VERSION\"" "$RUNNER_TEMP/cc.asset" \
+            || { echo "ассет релиза не отдался или в нём не версия $VERSION"; exit 1; }
+          CC_SOURCE=remote CC_INSTALL_DIR="$RUNNER_TEMP/rel" ./install.sh
+          got="$("$RUNNER_TEMP/rel/cc" version)"
+          [ "$got" = "cc $VERSION" ] || { echo "из релиза приехало '$got', ждали 'cc $VERSION'"; exit 1; }

@@ -10,18 +10,40 @@
 - `tmux`
 - `claude` в `PATH` (или путь в `CLAUDE_BIN`)
 
-## Установка
+## Установка и обновление
 
 ```bash
-git clone git@github.com:callmemars1/cc-tmux-manager.git
-install -m 755 cc-tmux-manager/cc ~/.local/bin/cc
+curl -fsSL https://raw.githubusercontent.com/callmemars1/cc-tmux-manager/main/install.sh | bash
 ```
 
-Либо симлинком, чтобы обновляться через `git pull`:
+Ставит последний релиз в `~/.local/bin/cc`. Тот же скрипт обновляет — повторный
+запуск просто подменяет файл на новую версию. Из клона: `./install.sh` поставит
+лежащий рядом `cc`.
+
+Обновиться можно и самим `cc` — он скачивает и запускает `install.sh` для того
+пути, откуда запущен:
+
+```bash
+cc update
+cc version
+```
+
+Либо симлинком, чтобы обновляться через `git pull` (`install.sh` в этом случае
+откажется перезаписывать симлинк, пока не передать `CC_FORCE=1`):
 
 ```bash
 ln -s "$PWD/cc-tmux-manager/cc" ~/.local/bin/cc
 ```
+
+Переменные `install.sh`:
+
+| Переменная | По умолчанию | Смысл |
+| --- | --- | --- |
+| `CC_INSTALL_DIR` | `~/.local/bin` | куда ставить |
+| `PREFIX` | — | альтернатива: ставит в `$PREFIX/bin` |
+| `CC_REF` | — | взять `cc` из ветки/тега вместо последнего релиза |
+| `CC_REPO` | `callmemars1/cc-tmux-manager` | откуда брать |
+| `CC_FORCE` | — | `1` — перезаписать `cc`, установленный симлинком |
 
 ## Команды
 
@@ -36,6 +58,8 @@ ln -s "$PWD/cc-tmux-manager/cc" ~/.local/bin/cc
 | `cc mv <old> <new>` | переименовать сессию (лог переезжает вместе с ней) |
 | `cc log <slug>` | писать вывод сессии в `~/.cc-logs/<slug>.log` |
 | `cc kill <slug>` / `cc killall` | убить сессию / весь tmux-сервер |
+| `cc update` | обновить сам `cc` до последнего релиза |
+| `cc version` (или `--version`) | версия установленного `cc` |
 | `cc help` (или `-h` / `--help`) | список команд и переменных окружения |
 
 Если сессия с таким именем уже есть, `cc <slug> задача` не создаёт новую, а
@@ -50,6 +74,7 @@ ln -s "$PWD/cc-tmux-manager/cc" ~/.local/bin/cc
 | `CC_AUTONAME` | `1` | `0` — не просить Claude переименовывать временную сессию |
 | `CLAUDE_BIN` | `claude` | чем запускать Claude Code |
 | `CLAUDE_FLAGS` | пусто | доп. флаги к запуску |
+| `CC_REPO` | `callmemars1/cc-tmux-manager` | откуда обновляется `cc update` |
 
 ## Как работает автопереименование
 
@@ -60,3 +85,17 @@ kebab-case слаг и вызвать `cc mv t-HHMMSS <slug>`. Отключае�
 
 `cc ls` показывает задачу из `pane_title`: Claude Code кладёт туда текущее
 занятие, обычный шелл — `user@host:cwd` (в этом случае выводится только `cwd`).
+
+## Версионирование и релизы
+
+Версия живёт в одной строке `CC_VERSION="X.Y.Z"` в начале `cc`. Релиз делается
+бампом этой строки: как только новое значение приезжает в `main`, workflow
+`release` создаёт тег `vX.Y.Z` и релиз с файлами `cc` и `install.sh`. Пуш без
+бампа не делает ничего, повторный запуск на том же значении — тоже.
+
+`install.sh` без `CC_REF` качает `cc` из
+`releases/latest/download/cc`, поэтому `cc update` всегда приносит последний
+релиз, а не состояние `main`.
+
+Workflow `ci` на каждый PR и пуш в `main` проверяет `bash -n`, `shellcheck`,
+что `CC_VERSION` — валидный semver, и что установка/переустановка работает.

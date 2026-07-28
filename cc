@@ -4,7 +4,11 @@
 # второй копии списка команд в этом файле быть не должно).
 set -euo pipefail
 
+# бамп этой строки в main = релиз: CI создаёт тег vX.Y.Z и выкладывает cc
+CC_VERSION="0.1.0"
+
 LOGDIR="${HOME}/.cc-logs"
+CC_REPO="${CC_REPO:-callmemars1/cc-tmux-manager}"
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
 CLAUDE_FLAGS="${CLAUDE_FLAGS:-}"
 
@@ -32,6 +36,8 @@ cc — менеджер tmux-сессий с Claude Code. Единица раб�
   cc log <slug>            писать вывод в $LOGDIR/<slug>.log
   cc kill <slug>           убить сессию
   cc killall               убить весь tmux-сервер
+  cc update                обновить сам cc до последнего релиза
+  cc version               версия cc (он же --version)
   cc help                  эта справка (он же -h / --help)
 
 Без аргументов — то же, что cc ls. Если сессия с таким слагом уже есть,
@@ -43,7 +49,29 @@ cc <slug> задача не создаёт новую, а досылает те�
   CC_AUTONAME=0 не просить Claude переименовывать временную сессию
   CLAUDE_BIN    чем запускать Claude Code (по умолчанию claude)
   CLAUDE_FLAGS  доп. флаги к запуску
+  CC_REPO       откуда обновляться (owner/repo)
 EOF
+}
+
+# обновление делегируем install.sh из репозитория: он один знает, откуда брать
+# cc и как его безопасно подменить (сюда логику не дублируем)
+cmd_update() {
+  local dir url tmp status
+  dir="$(cd "$(dirname "$0")" && pwd)"
+  # CC_INSTALLER_REF — только для проверки install.sh с ветки, в справке не нужен
+  url="https://raw.githubusercontent.com/$CC_REPO/${CC_INSTALLER_REF:-main}/install.sh"
+  tmp="$(mktemp)"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsL "$url" -o "$tmp" || { rm -f "$tmp"; die "не скачался install.sh: $url"; }
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$tmp" "$url" || { rm -f "$tmp"; die "не скачался install.sh: $url"; }
+  else
+    rm -f "$tmp"; die "нужен curl или wget"
+  fi
+  status=0
+  CC_INSTALL_DIR="$dir" CC_SOURCE=remote bash "$tmp" || status=$?
+  rm -f "$tmp"
+  return "$status"
 }
 
 cmd_ls() {
@@ -64,6 +92,10 @@ case "${1:-}" in
   ls|"")   cmd_ls; exit 0 ;;
   help|-h|--help)
            cmd_help; exit 0 ;;
+  version|--version)
+           echo "cc $CC_VERSION"; exit 0 ;;
+  update|upgrade)
+           cmd_update; exit 0 ;;
   a|at|attach)
            [ $# -ge 2 ] || usage_die "cc a <slug>"
            exec tmux attach -d -t "=$(norm "$2")" ;;
