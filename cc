@@ -1,20 +1,7 @@
 #!/usr/bin/env bash
 # cc — менеджер tmux-сессий с Claude Code. Единица = задача, не директория.
-#
-#   cc "задача словами"        временное имя t-HHMMSS, Claude сам переименует
-#   cc <slug> [задача...]      явное имя (пробелов нет → это слаг, а не задача)
-#   cc -C <dir> <slug> [...]   то же, но в другой рабочей директории
-#   cc ls                      сессии: чем занята, в какой папке, последняя строка
-#   cc a <slug>                подключиться (отобрав у зависшего клиента)
-#   cc peek <slug>             хвост сессии, не подключаясь
-#   cc mv <old> <new>          переименовать (когда прояснился реальный слаг)
-#   cc log <slug>              писать вывод в ~/.cc-logs/<slug>.log
-#   cc kill <slug> | killall
-#
-#   CC_DIR        рабочая директория по умолчанию (иначе — текущая)
-#   CC_AUTOLOG=1  включать pipe-pane сразу при создании сессии
-#   CC_AUTONAME=0 не просить Claude переименовывать временную сессию
-#   CLAUDE_FLAGS  доп. флаги; alias claude из ~/.bashrc раскрывается сам
+# Команды и переменные окружения: cc help (справка — в cmd_help ниже,
+# второй копии списка команд в этом файле быть не должно).
 set -euo pipefail
 
 LOGDIR="${HOME}/.cc-logs"
@@ -22,11 +9,41 @@ CLAUDE_BIN="${CLAUDE_BIN:-claude}"
 CLAUDE_FLAGS="${CLAUDE_FLAGS:-}"
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
+usage_die() { die "usage: $* (cc help — полная справка)"; }
 norm() { local n="${1//[^a-zA-Z0-9_-]/-}"; printf '%s' "${n##-}"; }
 
 start_log() {
   mkdir -p "$LOGDIR"
   tmux pipe-pane -o -t "=$1:" "cat >> '$LOGDIR/$1.log'"
+}
+
+cmd_help() {
+  cat <<EOF
+cc — менеджер tmux-сессий с Claude Code. Единица работы — задача.
+
+Команды:
+  cc "задача словами"      новая сессия t-HHMMSS; Claude сам её переименует
+  cc <slug> [задача...]    явное имя (без пробелов → слаг, а не задача)
+  cc -C <dir> <slug> [...] то же, но в другой рабочей директории
+  cc ls                    сессии: подключена ли, чем занята, что вывела
+  cc a <slug>              подключиться, отобрав у зависшего клиента
+  cc peek <slug>           хвост сессии, не подключаясь
+  cc mv <old> <new>        переименовать (лог переезжает вместе с ней)
+  cc log <slug>            писать вывод в $LOGDIR/<slug>.log
+  cc kill <slug>           убить сессию
+  cc killall               убить весь tmux-сервер
+  cc help                  эта справка (он же -h / --help)
+
+Без аргументов — то же, что cc ls. Если сессия с таким слагом уже есть,
+cc <slug> задача не создаёт новую, а досылает текст в существующую.
+
+Переменные окружения:
+  CC_DIR        рабочая директория новых сессий (иначе — текущая)
+  CC_AUTOLOG=1  включать pipe-pane сразу при создании сессии
+  CC_AUTONAME=0 не просить Claude переименовывать временную сессию
+  CLAUDE_BIN    чем запускать Claude Code (по умолчанию claude)
+  CLAUDE_FLAGS  доп. флаги к запуску
+EOF
 }
 
 cmd_ls() {
@@ -45,12 +62,14 @@ cmd_ls() {
 
 case "${1:-}" in
   ls|"")   cmd_ls; exit 0 ;;
+  help|-h|--help)
+           cmd_help; exit 0 ;;
   a|at|attach)
-           [ $# -ge 2 ] || die "usage: cc a <slug>"
+           [ $# -ge 2 ] || usage_die "cc a <slug>"
            exec tmux attach -d -t "=$(norm "$2")" ;;
-  peek)    [ $# -ge 2 ] || die "usage: cc peek <slug>"
+  peek)    [ $# -ge 2 ] || usage_die "cc peek <slug>"
            tmux capture-pane -p -S -60 -t "=$(norm "$2"):"; exit 0 ;;
-  mv)      [ $# -ge 3 ] || die "usage: cc mv <old> <new>"
+  mv)      [ $# -ge 3 ] || usage_die "cc mv <old> <new>"
            old="$(norm "$2")"; new="$(norm "$3")"
            if [ "$old" = "$new" ]; then exit 0; fi
            if tmux has-session -t "=$new" 2>/dev/null; then die "сессия '$new' уже есть"; fi
@@ -62,9 +81,9 @@ case "${1:-}" in
              start_log "$new"
            fi
            exit 0 ;;
-  log)     [ $# -ge 2 ] || die "usage: cc log <slug>"
+  log)     [ $# -ge 2 ] || usage_die "cc log <slug>"
            start_log "$(norm "$2")"; echo "→ $LOGDIR/$(norm "$2").log"; exit 0 ;;
-  kill)    [ $# -ge 2 ] || die "usage: cc kill <slug>"
+  kill)    [ $# -ge 2 ] || usage_die "cc kill <slug>"
            tmux kill-session -t "=$(norm "$2")"; exit 0 ;;
   killall) tmux kill-server 2>/dev/null || true; exit 0 ;;
 esac
@@ -72,7 +91,7 @@ esac
 # ── создание / подключение / досылка задачи ──────────────────────────
 dir="${CC_DIR:-$PWD}"
 if [ "${1:-}" = "-C" ]; then
-  [ $# -ge 3 ] || die "usage: cc -C <dir> <slug> [задача...]"
+  [ $# -ge 3 ] || usage_die "cc -C <dir> <slug> [задача...]"
   dir="$2"; shift 2
 fi
 [ -d "$dir" ] || die "нет такой директории: $dir"
