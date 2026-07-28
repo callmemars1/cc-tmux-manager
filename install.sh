@@ -1,17 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — ставит и обновляет cc. Одна и та же команда для обоих случаев:
-# повторный запуск просто заменяет установленный cc на новую версию.
-#
-#   curl -fsSL https://raw.githubusercontent.com/callmemars1/cc-tmux-manager/main/install.sh | bash
-#   ./install.sh          # из клона — поставит лежащий рядом cc
-#
-# Переменные окружения:
-#   CC_INSTALL_DIR  куда ставить (по умолчанию $PREFIX/bin или ~/.local/bin)
-#   PREFIX          альтернатива CC_INSTALL_DIR: ставит в $PREFIX/bin
-#   CC_REF          ветка или тег вместо последнего релиза
-#   CC_REPO         откуда брать (owner/repo)
-#   CC_SOURCE       remote — не брать локальную копию рядом со скриптом
-#   CC_FORCE        1 — перезаписать cc, даже если он установлен симлинком
+# install.sh — ставит и обновляет cc. Справка — в usage ниже (install.sh --help).
 set -euo pipefail
 
 REPO="${CC_REPO:-callmemars1/cc-tmux-manager}"
@@ -21,6 +9,24 @@ BINDIR="${BINDIR:-$HOME/.local/bin}"
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
 version_of() { sed -n 's/^CC_VERSION="\(.*\)"$/\1/p' "$1" | head -n1; }
+
+usage() {
+  cat <<EOF
+install.sh — ставит и обновляет cc. Одна и та же команда для обоих случаев:
+повторный запуск просто заменяет установленный cc на новую версию.
+
+  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | bash
+  ./install.sh          из клона — поставит лежащий рядом cc
+
+Переменные окружения:
+  CC_INSTALL_DIR  куда ставить (по умолчанию \$PREFIX/bin или ~/.local/bin)
+  PREFIX          альтернатива CC_INSTALL_DIR: ставит в \$PREFIX/bin
+  CC_REF          ветка или тег вместо последнего релиза
+  CC_REPO         откуда брать (owner/repo)
+  CC_SOURCE       remote — не брать локальную копию рядом со скриптом
+  CC_FORCE        1 — перезаписать cc, даже если он установлен симлинком
+EOF
+}
 
 fetch() { # fetch <url> <dest>
   if command -v curl >/dev/null 2>&1; then
@@ -33,7 +39,7 @@ fetch() { # fetch <url> <dest>
 }
 
 case "${1:-}" in
-  -h|--help) sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'; exit 0 ;;
+  -h|--help) usage; exit 0 ;;
   "") ;;
   *) die "неизвестный аргумент: $1 (install.sh --help)" ;;
 esac
@@ -76,19 +82,24 @@ new="$(version_of "$tmp")"
 bash -n "$tmp" || die "полученный cc не проходит проверку синтаксиса ($origin)"
 
 target="$BINDIR/cc"
+was_symlink=0
 old=""
-if [ -L "$target" ] && [ "${CC_FORCE:-}" != "1" ]; then
-  die "$target — симлинк на $(readlink "$target"): обнови клон через git pull
+if [ -L "$target" ]; then
+  [ "${CC_FORCE:-}" = "1" ] || die "$target — симлинк на $(readlink "$target"): обнови клон через git pull
 (или переустанови поверх симлинка: CC_FORCE=1 ...)"
+  was_symlink=1
 fi
-[ -f "$target" ] && old="$(version_of "$target" || true)"
+[ -e "$target" ] && old="$(version_of "$target" || true)"
 
-mkdir -p "$BINDIR"
+mkdir -p "$BINDIR" || die "не создаётся $BINDIR — задай другой CC_INSTALL_DIR"
+[ -w "$BINDIR" ] || die "нет прав на запись в $BINDIR — запусти под sudo или задай CC_INSTALL_DIR"
 # ставим через staged + mv: rename атомарен и не портит уже запущенные cc
 install -m 755 "$tmp" "$staged"
 mv -f "$staged" "$target"
 
-if [ -z "$old" ]; then
+if [ "$was_symlink" = "1" ]; then
+  echo "cc $new положен файлом вместо симлинка: $target ($origin)"
+elif [ -z "$old" ]; then
   echo "cc $new установлен: $target ($origin)"
 elif [ "$old" = "$new" ]; then
   echo "cc $new уже актуален: $target ($origin)"

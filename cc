@@ -58,6 +58,7 @@ EOF
 cmd_update() {
   local dir url tmp status
   dir="$(cd "$(dirname "$0")" && pwd)"
+  # CC_INSTALLER_REF — только для проверки install.sh с ветки, в справке не нужен
   url="https://raw.githubusercontent.com/$CC_REPO/${CC_INSTALLER_REF:-main}/install.sh"
   tmp="$(mktemp)"
   if command -v curl >/dev/null 2>&1; then

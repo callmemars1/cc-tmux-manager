@@ -46,3 +46,22 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "v$VERSION" \
             --generate-notes
+
+      # основной пользовательский путь: install.sh качает ассет cc из релиза.
+      # Ассет проверяем отдельным curl — иначе откат install.sh на main скрыл бы,
+      # что релиз выложился без файла.
+      - if: steps.version.outputs.exists == 'false'
+        name: установка из свежего релиза
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          url="https://github.com/$GITHUB_REPOSITORY/releases/latest/download/cc"
+          for _ in 1 2 3 4 5; do
+            curl -fsL "$url" -o "$RUNNER_TEMP/cc.asset" && break
+            sleep 3
+          done
+          grep -qx "CC_VERSION=\"$VERSION\"" "$RUNNER_TEMP/cc.asset" \
+            || { echo "ассет релиза не отдался или в нём не версия $VERSION"; exit 1; }
+          CC_SOURCE=remote CC_INSTALL_DIR="$RUNNER_TEMP/rel" ./install.sh
+          got="$("$RUNNER_TEMP/rel/cc" version)"
+          [ "$got" = "cc $VERSION" ] || { echo "из релиза приехало '$got', ждали 'cc $VERSION'"; exit 1; }
