@@ -25,6 +25,19 @@ jobs:
             || { echo "CC_VERSION=$v — не semver"; exit 1; }
           echo "версия: $v"
 
+      # интерактив пикера в CI не проверить (нужен pty), но фолбэк без
+      # терминала обязан работать — иначе ломаются пайпы и скрипты
+      - name: без терминала — плоский список вместо пикера
+        run: |
+          out="$(./cc s)"
+          [ "$out" = "нет запущенных сессий" ] || { echo "cc s без tty вывел: $out"; exit 1; }
+          out="$(./cc)"
+          [ "$out" = "нет запущенных сессий" ] || { echo "cc без tty вывел: $out"; exit 1; }
+
+      - name: cc n без терминала отказывается
+        run: |
+          if ./cc n </dev/null; then echo "cc n без терминала должен падать"; exit 1; fi
+
       - name: установка из клона
         run: |
           CC_INSTALL_DIR="$RUNNER_TEMP/bin" ./install.sh
